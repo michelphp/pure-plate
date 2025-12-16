@@ -1,0 +1,61 @@
+{% extends 'base.html.twig' %}
+
+
+{% set user = "Alice" %}
+{% set discount = 15 %}
+{% set initialPrice = 200 %}
+{% set isMember = true %}
+{% set items = 5 %}
+{% set bonusPoints = 50 ? isMember : "tata" %}
+{% set toto = ['toto'] %}
+{% set toto2 = new stdClass() %}
+{{ isMember ? "Eligible for members special gift ?"|upper|lower : ":Regular item" }}
+
+{% block body %}
+
+Hello, {{ user }}!
+
+{% if isMember %}
+        {% set finalPrice = initialPrice - (initialPrice * discount / 100) %}
+        You have a discount of {{ discount }}%, so the final price is {{ finalPrice }} EUR.
+
+        {% if finalPrice < 100 %}
+                You're eligible for free shipping!
+        {% else %}
+                Shipping costs will apply.
+        {% endif %}
+{% else %}
+        No discount applies since you are not a member.
+        The price remains {{ initialPrice }} EUR.
+{% endif %}
+
+{% if items > 3 %}
+        As you have more than 3 items, you receive an additional 10 bonus points!
+        {% set bonusPoints = bonusPoints + 10 %}
+{% endif %}
+
+Your total bonus points: {{bonusPoints }}.
+
+{% for i in 1..items %}
+        - Item {{ i }}: {{ isMember ? "Eligible for members special gift ?"|upper : ":Regular item" }}\n
+        {% if i == 10 %}
+                This is an even-numbered item.
+        {% else %}
+                This is an odd-numbered item.
+        {% endif %}
+{% endfor %}
+
+{% if items == 0 %}
+        You have no items in your cart.
+{% elseif items == 1 %}
+        You have 1 item in your cart.
+{% else %}
+        You have {{ items + 41 }} items in your cart.
+{% endif %}
+
+{{ dump(isMember) }}
+{% if isMember === true %}
+{{ 'okkkkkkkkkkkkkkkk'|upper|lower }}
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,23 @@
+{
+  "name": "michel/pure-plate",
+  "description": "PurePlate is a lightweight and versatile template rendering library for native PHP.",
+  "type": "library",
+  "require": {
+    "php": ">=7.4"
+  },
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "F. Michel"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "Michel\\Renderer\\": "src",
+      "Test\\Michel\\Renderer\\": "tests"
+    }
+  },
+  "require-dev": {
+    "michel/unitester": "^1.0.0"
+  }
+}
