@@ -5,7 +5,7 @@
   "require": {
     "php": ">=7.4"
   },
-  "license": "MIT",
+  "license": "MPL-2.0",
   "authors": [
     {
       "name": "F. Michel"
@@ -13,8 +13,8 @@
   ],
   "autoload": {
     "psr-4": {
-      "Michel\\Renderer\\": "src",
-      "Test\\Michel\\Renderer\\": "tests"
+      "Michel\\PurePlate\\": "src",
+      "Test\\Michel\\PurePlate\\": "tests"
     }
   },
   "require-dev": {

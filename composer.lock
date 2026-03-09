@@ -1,0 +1,112 @@
+{
+    "_readme": [
+        "This file locks the dependencies of your project to a known state",
+        "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
+        "This file is @generated automatically"
+    ],
+    "content-hash": "4611f663f44992e148187cf32a8a0f91",
+    "packages": [],
+    "packages-dev": [
+        {
+            "name": "michel/unitester",
+            "version": "1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://git.depohub.org/michel/unitester",
+                "reference": "2877e96750aad48983ef65ad7592e1ee9cff5d56"
+            },
+            "require": {
+                "ext-mbstring": "*",
+                "php": ">=7.4",
+                "psr/container": "^2.0"
+            },
+            "bin": [
+                "bin/unitester"
+            ],
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "src/assert.php"
+                ],
+                "psr-4": {
+                    "Michel\\UniTester\\": "src",
+                    "Test\\Michel\\UniTester\\": "tests"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "F. Michel"
+                }
+            ],
+            "description": "PHP UniTester is a unit testing library for PHP that provides a straightforward interface for writing and executing tests. It focuses on a minimalist approach, allowing developers to create assertions and organize tests at the lowest level of PHP, without reliance on complex external libraries.",
+            "time": "2025-12-14T15:53:05+00:00"
+        },
+        {
+            "name": "psr/container",
+            "version": "2.0.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/php-fig/container.git",
+                "reference": "c71ecc56dfe541dbd90c5360474fbc405f8d5963"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/php-fig/container/zipball/c71ecc56dfe541dbd90c5360474fbc405f8d5963",
+                "reference": "c71ecc56dfe541dbd90c5360474fbc405f8d5963",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=7.4.0"
+            },
+            "type": "library",
+            "extra": {
+                "branch-alias": {
+                    "dev-master": "2.0.x-dev"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Psr\\Container\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "PHP-FIG",
+                    "homepage": "https://www.php-fig.org/"
+                }
+            ],
+            "description": "Common Container Interface (PHP FIG PSR-11)",
+            "homepage": "https://github.com/php-fig/container",
+            "keywords": [
+                "PSR-11",
+                "container",
+                "container-interface",
+                "container-interop",
+                "psr"
+            ],
+            "support": {
+                "issues": "https://github.com/php-fig/container/issues",
+                "source": "https://github.com/php-fig/container/tree/2.0.2"
+            },
+            "time": "2021-11-05T16:47:00+00:00"
+        }
+    ],
+    "aliases": [],
+    "minimum-stability": "stable",
+    "stability-flags": {},
+    "prefer-stable": false,
+    "prefer-lowest": false,
+    "platform": {
+        "php": ">=7.4"
+    },
+    "platform-dev": {},
+    "plugin-api-version": "2.6.0"
+}

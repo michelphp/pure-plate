@@ -1,6 +1,6 @@
 <?php
 
-namespace Michel\Renderer;
+namespace Michel\PurePlate;
 
 use InvalidArgumentException;
 use RuntimeException;
@@ -14,11 +14,10 @@ use function ob_start;
 use function rtrim;
 use function trim;
 
-final class PurePlate
+final class PhpRenderer
 {
     private string $templateDir;
     private array $globals;
-
     private array $blocks = [];
     private ?string $currentBlock = null;
     private ?string $layout = null;

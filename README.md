@@ -1,6 +1,6 @@
 # PurePlate
 
-PurePlate is a lightweight and versatile template rendering library for native PHP.
+Pure is a high-performance, lexer-based template engine for PHP 7.4+. It compiles a clean, intuitive syntax into native cached PHP code with zero runtime overhead.
 
 ## Installation
 
@@ -15,7 +15,7 @@ composer require michel/pure-plate
 To use the renderer in your project, first create an instance of the `PhpRenderer` class and pass the directory where your templates are located.
 
 ```php
-use Michel\Renderer\PurePlate;
+use Michel\Renderer\PhpRenderer;
 
 // Specify the template directory
 $templateDir = '/path/to/templates';
@@ -26,7 +26,7 @@ $globals = [
 ];
 
 // Create the renderer instance
-$renderer = new PurePlate($templateDir, $globals);
+$renderer = new PhpRenderer($templateDir, $globals);
 ```
 
 ### Creating a Layout
