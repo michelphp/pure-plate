@@ -80,4 +80,4 @@ Contributions to the PurePlate library are welcome! If you find any issues or wa
 
 ## License
 
-PurePlate is open-source software released under the MIT License. See the [LICENSE](LICENSE) file for more details.
+PurePlate is open-source software released under the Mozilla Public License 2.0. See the [LICENSE](LICENSE) file for more details.
