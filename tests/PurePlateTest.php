@@ -38,6 +38,7 @@ final class PurePlateTest extends TestCase
 
     protected function execute(): void
     {
+        $this->itRendersComment();
         $this->itRendersSimpleVariables();
         $this->itHandlesFiltersWithArguments();
         $this->itExecutesLogicBlocks();
@@ -48,6 +49,15 @@ final class PurePlateTest extends TestCase
         $this->itHandlesNestedForeachAndIf();
         $this->itHandlesIsNotEmptySyntax();
         $this->itHandlesNativeArraySyntax();
+    }
+
+    public function itRendersComment()
+    {
+        $tpl = "{#        {% include 'flash_bag.html.twig' %}#}\n{#        {% include 'flash_bag.html.twig' %}#}";
+        file_put_contents($this->tplDir . '/comment.html', $tpl);
+        $output = $this->engine->render('comment.html', []);
+        $this->assertEquals('', trim($output));
+
     }
 
     /** @test */

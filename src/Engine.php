@@ -92,11 +92,17 @@ final class Engine
     {
         $html = file_get_contents($path);
         $this->blocks = [];
-        $lines = explode("\n", $html);
+        $lines = explode(PHP_EOL, $html);
         $output = "";
 
         foreach ($lines as $i => $line) {
             $num = $i + 1;
+
+            $line = preg_replace('/{#.*?#}/', '', $line);
+            if (trim($line) === '') {
+                $output .= $line .PHP_EOL;
+                continue;
+            }
             $line = preg_replace_callback('/{{(.*?)}}|{% (.*?) %}/', function ($m) use ($num, $path) {
                 $isBlock = !empty($m[2]);
                 $content = trim($isBlock ? $m[2] : $m[1]);
@@ -110,7 +116,7 @@ final class Engine
 
             }, $line);
 
-            $output .= $line . "\n";
+            $output .= $line .PHP_EOL;
         }
         return $output;
     }
@@ -138,7 +144,7 @@ final class Engine
 
         if ($cmd === 'include') {
             $phpExpr = $this->parseTokens($rawExpr);
-            return "<?php \$_epure->render($phpExpr); ?>";
+            return "<?php \$_pure->render($phpExpr); ?>";
         }
 
         if ($cmd === 'set') {
