@@ -26,7 +26,7 @@ final class Engine
     {
         $this->templateDir = $templateDir;
         $this->devMode = $devMode;
-        $this->cacheDir = $cacheDir ?? sys_get_temp_dir() . '/pure_cache';
+        $this->cacheDir = $cacheDir ?? sys_get_temp_dir() . '/plate_cache';
         if (!is_dir($this->cacheDir)) {
             @mkdir($this->cacheDir, 0755, true);
         }
@@ -36,7 +36,7 @@ final class Engine
                 throw new InvalidArgumentException('Global key must be a string.');
             }
         }
-        $globals['_pure'] = $this;
+        $globals['_plate'] = $this;
 
         $this->renderer = new PhpRenderer($this->cacheDir, $globals);
     }
@@ -46,6 +46,10 @@ final class Engine
      */
     public function render(string $filename, array $context = []): string
     {
+        if (pathinfo($filename, PATHINFO_EXTENSION) === 'php') {
+            return $this->renderer->render($filename, $context);
+        }
+
         $templatePath = $this->templateDir . '/' . ltrim($filename, '/');
         if (!file_exists($templatePath)) {
             throw new RuntimeException("Template not found: {$templatePath}");
@@ -62,14 +66,13 @@ final class Engine
             }
         }
 
-        set_error_handler(function ($severity, $message, $file, $line) {
-            if (!(error_reporting() & $severity)) {
-                return;
-            }
-            throw new ErrorException($message, 0, $severity, $file, $line);
-        });
-
         try {
+            set_error_handler(function ($severity, $message, $file, $line) {
+                if (!(error_reporting() & $severity)) {
+                    return;
+                }
+                throw new ErrorException($message, 0, $severity, $file, $line);
+            });
             return $this->renderer->render(str_replace($this->cacheDir, '', realpath($cacheFile)), $context);
         } catch (Throwable $e) {
             $this->handleError($e, file_get_contents($cacheFile), $templatePath);
@@ -129,7 +132,7 @@ final class Engine
 
         if ($cmd === 'extends') {
             $phpExpr = $this->parseTokens($rawExpr);
-            return "<?php \$_epure->extend($phpExpr); ?>";
+            return "<?php \$_plate->extend($phpExpr); ?>";
         }
 
 
@@ -144,7 +147,7 @@ final class Engine
 
         if ($cmd === 'include') {
             $phpExpr = $this->parseTokens($rawExpr);
-            return "<?php \$_pure->render($phpExpr); ?>";
+            return "<?php \$_plate->render($phpExpr); ?>";
         }
 
         if ($cmd === 'set') {
@@ -167,7 +170,11 @@ final class Engine
 
         if (substr($cmd, 0, 3) === 'end') {
             if (empty($this->blocks)) {
-                throw new Exception("ÉPURE ERROR: '$cmd' inattendu à la ligne $line");
+                throw new \Exception(sprintf(
+                    "Unexpected '%s' at line %d (missing opening tag)",
+                    $cmd,
+                    $line
+                ));
             }
             array_pop($this->blocks);
             return "<?php $cmd; ?>";
@@ -290,24 +297,35 @@ final class Engine
         return $res;
     }
 
-    private function handleError(Throwable $e, string $compiled, string $path): void
+    private function handleError(\Throwable $e, string $compiled, string $path): void
     {
         $lines = explode("\n", $compiled);
         $errorLine = $e->getLine();
         $faultyCode = $lines[$errorLine - 1] ?? '';
 
         preg_match('/\/\*L:(\d+);F:(.*?)\*\//', $faultyCode, $m);
+        $currentFile = $m[2] ?? $path;
+        $currentLine = $m[1] ?? 'unknown';
 
-        $origLine = isset($m[1]) ? (int)$m[1] : $e->getLine();
-        $origFile = $m[2] ?? $path;
+        if ($e instanceof \ErrorException) {
+            throw new \ErrorException(
+                $e->getMessage() . " -> " . $currentFile . ":" . $currentLine,
+                $e->getCode(),
+                $e->getSeverity(),
+                $e->getFile(),
+                $e->getLine(),
+                $e->getPrevious()
+            );
+        }
+
         throw new \ErrorException(
-            "PurePlate Render Error: " . $e->getMessage(),
-            0,
-            ($e instanceof \ErrorException) ? $e->getSeverity() : E_USER_ERROR,
-            $origFile,
-            $origLine
+            "PurePlate Error: " . $e->getMessage() . " [At: " . $currentFile . ":" . $currentLine . "]",
+            $e->getCode(),
+            E_USER_ERROR,
+            $e->getFile(),
+            $e->getLine(),
+            $e
         );
-
     }
 
     private function isCacheValid(string $templateFile, string $cacheFile): bool
