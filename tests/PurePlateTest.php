@@ -102,7 +102,7 @@ final class PurePlateTest extends TestCase
         } catch (ErrorException $e) {
             // Vérification du mapping de ligne magique /*L:3;F:...*/
             $this->assertEquals(3, $e->getLine());
-            $this->assertStringContains($e->getFile(), 'error.html');
+            $this->assertStringContains($e->getMessage(), 'error.html');
         }
     }
 

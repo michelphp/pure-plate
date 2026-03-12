@@ -19,7 +19,7 @@ final class PhpRenderer
     private string $templateDir;
     private array $globals;
     private array $blocks = [];
-    private ?string $currentBlock = null;
+    private array $blockStack = [];
     private ?string $layout = null;
 
     public function __construct(
@@ -65,12 +65,8 @@ final class PhpRenderer
 
     public function startBlock(string $name): void
     {
-        if ($this->currentBlock !== null) {
-            throw new RuntimeException("A block is already started. Call endBlock() before starting a new block.");
-        }
-
         $content = $this->block($name);
-        $this->currentBlock = $name;
+        $this->blockStack[] = $name;
         if (!empty($content)) {
             echo $content;
         }
@@ -79,11 +75,16 @@ final class PhpRenderer
 
     public function endBlock(): void
     {
-        if ($this->currentBlock === null) {
+        if (empty($this->blockStack)) {
             throw new RuntimeException("No block started. Call startBlock() before calling endBlock().");
         }
-        $this->blocks[$this->currentBlock] = trim(ob_get_clean());
-        $this->currentBlock = null;
+
+        $content = trim(ob_get_clean());
+        $name = array_pop($this->blockStack);
+        $this->blocks[$name] = $content;
+        if (!empty($this->blockStack)) {
+            echo $content;
+        }
     }
 
     public function block(string $name): string

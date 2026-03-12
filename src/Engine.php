@@ -65,14 +65,14 @@ final class Engine
                 $this->handleError($e, $compiledCode, $templatePath);
             }
         }
+        set_error_handler(function ($severity, $message, $file, $line) {
+            if (!(error_reporting() & $severity)) {
+                return;
+            }
+            throw new ErrorException($message, 0, $severity, $file, $line);
+        });
 
         try {
-            set_error_handler(function ($severity, $message, $file, $line) {
-                if (!(error_reporting() & $severity)) {
-                    return;
-                }
-                throw new ErrorException($message, 0, $severity, $file, $line);
-            });
             return $this->renderer->render(str_replace($this->cacheDir, '', realpath($cacheFile)), $context);
         } catch (Throwable $e) {
             $this->handleError($e, file_get_contents($cacheFile), $templatePath);
