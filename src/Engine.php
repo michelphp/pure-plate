@@ -16,6 +16,7 @@ final class Engine
     private string $cacheDir;
     private PhpRenderer $renderer;
     private array $blocks = [];
+    private array $globals = [];
 
     public function __construct(
         string  $templateDir,
@@ -38,7 +39,8 @@ final class Engine
         }
         $globals['_plate'] = $this;
 
-        $this->renderer = new PhpRenderer($this->cacheDir, $globals);
+        $this->globals = $globals;
+        $this->renderer = new PhpRenderer($this->cacheDir, $this->globals);
     }
 
     /**
@@ -47,7 +49,8 @@ final class Engine
     public function render(string $filename, array $context = []): string
     {
         if (pathinfo($filename, PATHINFO_EXTENSION) === 'php') {
-            return $this->renderer->render($filename, $context);
+            $render = new PhpRenderer($this->templateDir, $this->globals);
+            return $render->render($filename, $context);
         }
 
         $templatePath = $this->templateDir . '/' . ltrim($filename, '/');
@@ -65,14 +68,14 @@ final class Engine
                 $this->handleError($e, $compiledCode, $templatePath);
             }
         }
-        set_error_handler(function ($severity, $message, $file, $line) {
-            if (!(error_reporting() & $severity)) {
-                return;
-            }
-            throw new ErrorException($message, 0, $severity, $file, $line);
-        });
 
         try {
+            set_error_handler(function ($severity, $message, $file, $line) {
+                if (!(error_reporting() & $severity)) {
+                    return;
+                }
+                throw new ErrorException($message, 0, $severity, $file, $line);
+            });
             return $this->renderer->render(str_replace($this->cacheDir, '', realpath($cacheFile)), $context);
         } catch (Throwable $e) {
             $this->handleError($e, file_get_contents($cacheFile), $templatePath);
@@ -316,6 +319,7 @@ final class Engine
                 $e->getLine(),
                 $e->getPrevious()
             );
+
         }
 
         throw new \ErrorException(
