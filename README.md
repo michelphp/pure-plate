@@ -1,10 +1,10 @@
 # PurePlate
 
-**A lightweight template engine for PHP. The syntax of Twig. The power of native PHP. None of the weight.**
+**A lightweight template engine for PHP. The syntax of Jinja. The power of native PHP. None of the weight.**
 
 PurePlate parses templates with PHP's native `token_get_all()` lexer and compiles them to plain, cached PHP. No runtime overhead. No bloat. No magic.
 
-```twig
+```jinja
 {% extends "layout.tpl" %}
 
 {% block content %}
@@ -36,7 +36,7 @@ $twig->addFilter(new TwigFilter('format', 'number_format'));
 
 In PurePlate, every PHP function is already a filter:
 
-```twig
+```jinja
 {{ name|strtoupper }}
 {{ price|number_format(2, ',', ' ') }}
 {{ text|substr(0, 100) }}
@@ -124,7 +124,7 @@ echo $plate->render('page.tpl', [
 
 ### Output
 
-```twig
+```jinja
 {{ variable }}                       {# auto-escaped #}
 {{ user.name }}                      {# same as user->name #}
 {{ user.getName() }}                 {# method call #}
@@ -134,7 +134,7 @@ echo $plate->render('page.tpl', [
 
 ### Control structures
 
-```twig
+```jinja
 {% if condition %} ... {% elseif other %} ... {% else %} ... {% endif %}
 {% foreach items as item %} ... {% endforeach %}
 {% for i = 0; i < 10; i++ %} ... {% endfor %}
@@ -143,7 +143,7 @@ echo $plate->render('page.tpl', [
 
 ### Tests
 
-```twig
+```jinja
 {% if list is empty %} ... {% endif %}
 {% if list is not empty %} ... {% endif %}
 {% if not active %} ... {% endif %}
@@ -151,13 +151,13 @@ echo $plate->render('page.tpl', [
 
 ### Variable assignment
 
-```twig
+```jinja
 {% set total = price * quantity %}
 ```
 
 ### Template inheritance
 
-```twig
+```jinja
 {# layout.tpl #}
 <html>
 <body>
@@ -174,13 +174,13 @@ echo $plate->render('page.tpl', [
 
 ### Includes
 
-```twig
+```jinja
 {% include "partials/header.tpl" %}
 ```
 
 ### Comments
 
-```twig
+```jinja
 {# This will not appear in the output #}
 ```
 
