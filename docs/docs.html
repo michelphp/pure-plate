@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PurePlate documentation</title>
+<meta name="description" content="Install and use PurePlate: template syntax, printing and escaping, filters, conditions and loops, variables and globals, layouts and blocks, includes, plain PHP templates, errors, cache and performance.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="logo" href="./">pureplate<span>/</span></a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="./">Home</a>
+      <a href="docs.html">Documentation</a>
+      <a href="https://github.com/michelphp/pure-plate">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+<div class="docs">
+
+<nav class="toc" aria-label="Documentation">
+  <ol>
+    <li><a href="#install">1. Install</a></li>
+    <li><a href="#quick-start">2. Quick start</a></li>
+    <li><a href="#syntax">3. Writing templates</a></li>
+    <li><a href="#output">4. Printing values</a></li>
+    <li><a href="#filters">5. Filters and functions</a></li>
+    <li><a href="#control">6. Conditions and loops</a></li>
+    <li><a href="#variables">7. Variables and globals</a></li>
+    <li><a href="#layouts">8. Layouts and blocks</a></li>
+    <li><a href="#includes">9. Includes</a></li>
+    <li><a href="#php">10. Plain PHP templates</a></li>
+    <li><a href="#errors">11. Errors</a></li>
+    <li><a href="#cache">12. Cache: dev and production</a></li>
+    <li><a href="#performance">13. Performance</a></li>
+  </ol>
+</nav>
+
+<article>
+<h1>Documentation</h1>
+<p>Everything PurePlate does, in the order you meet it. One rule runs through all of it: <strong>what you read is what runs</strong>. A template is PHP with a lighter syntax, so PHP's own rules apply.</p>
+
+<h2 id="install">1. Install</h2>
+<pre>$ composer require michel/pure-plate</pre>
+<div class="table-box">
+<table>
+  <thead><tr><th>Requirement</th><th>Version</th></tr></thead>
+  <tbody>
+    <tr><td>PHP</td><td>7.4 or higher</td></tr>
+    <tr><td>Extension</td><td><code>tokenizer</code> (enabled in standard PHP builds)</td></tr>
+    <tr><td>Dependencies</td><td>None</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Enable OPcache in production: compiled templates are plain PHP files, and OPcache keeps them in memory.</p>
+
+<h2 id="quick-start">2. Quick start</h2>
+<p>Create <code>templates/page.tpl</code>:</p>
+<pre>&lt;h1&gt;Hello, <span class="v">{{ user.name|strtoupper }}</span>!&lt;/h1&gt;
+
+<span class="k">{% if</span> <span class="v">items is not empty</span> <span class="k">%}</span>
+&lt;ul&gt;
+<span class="k">{% foreach</span> <span class="v">items as item</span> <span class="k">%}</span>
+  &lt;li&gt;<span class="v">{{ item.title }}</span> — <span class="v">{{ item.price|number_format(2) }}</span> €&lt;/li&gt;
+<span class="k">{% endforeach %}</span>
+&lt;/ul&gt;
+<span class="k">{% endif %}</span></pre>
+<p>Then render it:</p>
+<pre>&lt;?php
+use Michel\PurePlate\Engine;
+
+$plate = new Engine(__DIR__ . '/templates');
+
+echo $plate-&gt;render('page.tpl', [
+    'user'  =&gt; (object) ['name' =&gt; 'fady'],
+    'items' =&gt; [
+        (object) ['title' =&gt; 'Item A', 'price' =&gt; 19.90],
+        (object) ['title' =&gt; 'Item B', 'price' =&gt; 42.00],
+    ],
+]);</pre>
+<p>The engine takes four arguments:</p>
+<pre>new Engine(
+    string  $templateDir,
+    bool    $devMode = false,   <span class="c">// true: recompile a template when it changes</span>
+    ?string $cacheDir = null,   <span class="c">// default: &lt;system temp dir&gt;/pp_cache</span>
+    array   $globals = []       <span class="c">// variables available in every template</span>
+);</pre>
+<p>Template names are relative to <code>$templateDir</code>, sub-folders included: <code>$plate-&gt;render('emails/welcome.tpl')</code>. The extension is free (<code>.tpl</code>, <code>.html</code>, <code>.txt</code>…), except <code>.php</code>, which is rendered as <a href="#php">plain PHP</a>.</p>
+
+<h2 id="syntax">3. Writing templates</h2>
+<p>A template is text with three kinds of tags:</p>
+<div class="table-box">
+<table>
+  <thead><tr><th>Tag</th><th>Role</th></tr></thead>
+  <tbody>
+    <tr><td><code>{{ expression }}</code></td><td>Prints the value, escaped.</td></tr>
+    <tr><td><code>{% statement %}</code></td><td>Controls: <code>if</code>, <code>foreach</code>, <code>set</code>, <code>extends</code>, <code>block</code>, <code>include</code>…</td></tr>
+    <tr><td><code>{# comment #}</code></td><td>Removed from the output.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Inside a tag, you write a PHP expression with three shortcuts:</p>
+<div class="table-box">
+<table>
+  <thead><tr><th>You write</th><th>PHP runs</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td><code>title</code></td><td><code>$title</code></td><td>A bare word is a variable.</td></tr>
+    <tr><td><code>user.name</code></td><td><code>$user-&gt;name</code></td><td>The dot is the object operator.</td></tr>
+    <tr><td><code>price|round(2)</code></td><td><code>round($price, 2)</code></td><td>The pipe passes the value to a function.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Everything else is written as in PHP: strings, numbers, operators, <code>[]</code>, <code>? :</code>, <code>??</code>, function, method and static calls. A word followed by <code>(</code> is a function, so <code>count(items)</code> is <code>count($items)</code>. A word followed by <code>::</code> is a class, so <code>Order::PAID</code> stays <code>Order::PAID</code>. <code>true</code>, <code>false</code> and <code>null</code> keep their meaning.</p>
+<div class="note"><strong><code>{{ }}</code> and <code>{% %}</code> end on the line where they start.</strong> Otherwise PurePlate stops with <code>Unclosed '{{'</code> at that line, instead of printing the tag as text. Comments <code>{# … #}</code> can span lines: their content is never run, and line numbers stay right. To print a literal <code>{{</code>, write <code>{{ '{{' }}</code>.</div>
+<div class="note"><strong>A tag ends at the first <code>}}</code> or <code>%}</code>, even inside a string, and a comment is removed even inside a string.</strong> <code>{{ "}}" }}</code> and <code>{{ '{# x #}' }}</code> do not work: build such strings in PHP and pass them as variables.</div>
+<p>PHP's precedence applies: nested ternaries need parentheses, <code>a ? b : (c ? d : e)</code>, or PHP 8 refuses them. The syntax stays the template one: PHP 8 named arguments (<code>f(name: value)</code>) are not supported. <code>|</code> is the filter, not the bitwise OR, and a bare word is a variable, not a global constant: combine flags such as <code>JSON_HEX_TAG | JSON_HEX_AMP</code> in a PHP function (see <a href="#output">Escaping in other contexts</a>).</p>
+<p>PHP removes the line break right after a statement that ends a line, so <code>{% if %}</code> and <code>{% endif %}</code> on their own lines do not leave empty lines. The line break after a <code>{{ … }}</code> that ends a line is kept, so text templates (emails, CSV) keep their layout.</p>
+
+<h2 id="output">4. Printing values</h2>
+<p><code>{{ … }}</code> prints any PHP expression, always through <code>htmlspecialchars(…, ENT_QUOTES)</code>. The value is cast to a string first: <code>null</code> and <code>false</code> print nothing, <code>true</code> prints <code>1</code>, an array cannot be printed.</p>
+<h3>Variables, properties, methods</h3>
+<pre><span class="v">{{ title }}</span>                              <span class="c">{# $title #}</span>
+<span class="v">{{ user.name }}</span>                          <span class="c">{# $user-&gt;name #}</span>
+<span class="v">{{ user.profile.address.city }}</span>          <span class="c">{# $user-&gt;profile-&gt;address-&gt;city #}</span>
+<span class="v">{{ user.getName() }}</span>                     <span class="c">{# $user-&gt;getName() #}</span>
+<span class="v">{{ user.hasRole('admin') }}</span>              <span class="c">{# $user-&gt;hasRole('admin') #}</span>
+<span class="v">{{ user.getProfile().city }}</span>             <span class="c">{# $user-&gt;getProfile()-&gt;city #}</span></pre>
+<h3>Arrays</h3>
+<pre><span class="v">{{ config['env'] }}</span>                      <span class="c">{# $config['env'] #}</span>
+<span class="v">{{ config['db']['host'] }}</span>               <span class="c">{# $config['db']['host'] #}</span>
+<span class="v">{{ tags[0] }}</span>                            <span class="c">{# $tags[0] #}</span>
+<span class="v">{{ items[count - 1] }}</span>                   <span class="c">{# $items[$count - 1] #}</span>
+<span class="v">{{ tags[0].name }}</span>                       <span class="c">{# $tags[0]-&gt;name #}</span>
+<span class="v">{{ config['db'].host }}</span>                  <span class="c">{# $config['db']-&gt;host #}</span></pre>
+<h3>Literals and operators</h3>
+<pre><span class="v">{{ 'Hello' }}</span>   <span class="v">{{ 42 }}</span>   <span class="v">{{ 3.14 }}</span>
+<span class="v">{{ "Hi $name" }}</span>                         <span class="c">{# PHP string interpolation #}</span>
+<span class="v">{{ price * quantity }}</span>
+<span class="v">{{ (price + shipping) * 1.2 }}</span>
+<span class="v">{{ count % 2 }}</span>
+<span class="v">{{ -balance }}</span></pre>
+<h3>Conditions and fallbacks</h3>
+<pre><span class="v">{{ isAdmin ? 'admin' : 'guest' }}</span>
+<span class="v">{{ not isAdmin ? 'user' : 'admin' }}</span>
+<span class="v">{{ items is empty ? 'No items' : 'Items' }}</span>
+<span class="v">{{ nickname ?: 'anonymous' }}</span>            <span class="c">{# when nickname is empty #}</span>
+<span class="v">{{ nickname ?? 'anonymous' }}</span>            <span class="c">{# when nickname is not set or null #}</span>
+<span class="v">{{ user.middleName ?? '' }}</span>              <span class="c">{# a missing property, no error #}</span>
+<span class="v">{{ config['debug'] ?? false }}</span>           <span class="c">{# a missing key, no error #}</span></pre>
+<h3>Functions and filters</h3>
+<pre><span class="v">{{ count(items) }}</span>                       <span class="c">{# a PHP function #}</span>
+<span class="v">{{ items|count }}</span>                         <span class="c">{# the same, as a filter #}</span>
+<span class="v">{{ name|trim|strtoupper }}</span>                <span class="c">{# strtoupper(trim($name)) #}</span>
+<span class="v">{{ user.getName()|ucfirst }}</span>
+<span class="v">{{ items|count &gt; 1 ? 'many' : 'one' }}</span>
+<span class="v">{{ sprintf('%s (%d)', name, count) }}</span>
+<span class="v">{{ max(1, count, 3) }}</span>
+<span class="v">{{ json_encode(config) }}</span>
+<span class="v">{{ date('Y') }}</span></pre>
+<p>See <a href="#filters">Filters and functions</a> for the rules.</p>
+<h3>Classes and constants</h3>
+<pre><span class="v">{{ Order::STATUS_PAID }}</span>                  <span class="c">{# a class constant #}</span>
+<span class="v">{{ Money::format(price) }}</span>                <span class="c">{# a static method #}</span>
+<span class="v">{{ \App\Model\Role::ADMIN }}</span>             <span class="c">{# a namespaced class #}</span>
+<span class="v">{{ order.status == Order::STATUS_PAID ? 'Paid' : 'Pending' }}</span>
+<span class="v">{{ constant('PHP_VERSION') }}</span>            <span class="c">{# a global constant #}</span></pre>
+<p>A word followed by <code>::</code> is a class name. A global constant such as <code>PHP_VERSION</code> is a bare word, so it would be read as a variable: use <code>constant('PHP_VERSION')</code>, or pass the value to the template.</p>
+<h3>Objects and arrays</h3>
+<p>The dot is for objects, brackets are for arrays, exactly as <code>-&gt;</code> and <code>[]</code> in PHP. Chain them freely: <code>config['db'].host</code>, <code>user.tags[1].name</code>.</p>
+<div class="note"><strong><code>user.profile</code> reads the property, it never calls <code>getProfile()</code>.</strong> To use a getter, write it: <code>user.getProfile()</code>. A private property works only if the class defines <code>__get()</code>. On an array, <code>user.name</code> fails like <code>$user-&gt;name</code> would: write <code>user['name']</code>.</div>
+<p>Since the dot reads objects, PHP's <code>.</code> concatenation is not available. Print values side by side, or use a function: <code>{{ sprintf('%s %s', first, last) }}</code>.</p>
+<h3>Escaped and raw output</h3>
+<p>Two ways to print, the same as in PHP:</p>
+<div class="table-box">
+<table>
+  <thead><tr><th>Template</th><th>PHP</th><th>Escaped</th></tr></thead>
+  <tbody>
+    <tr><td><code>{{ article.html }}</code></td><td><code>echo htmlspecialchars(…)</code></td><td>Yes</td></tr>
+    <tr><td><code>{% echo article.html %}</code></td><td><code>echo $article-&gt;html</code></td><td>No</td></tr>
+  </tbody>
+</table>
+</div>
+<p><code>{{ … }}</code> is the safe default. <code>{% echo … %}</code> is PHP's own <code>echo</code>: use it only for HTML you trust, such as content you sanitized yourself. Filters work with both:</p>
+<pre><span class="k">{% echo</span> <span class="v">article.html|strip_tags('&lt;p&gt;&lt;a&gt;')</span> <span class="k">%}</span></pre>
+<div class="note"><strong><code>{% echo %}</code> prints exactly what it receives.</strong> Never use it on text that comes from a user without cleaning it first: that is how XSS happens.</div>
+<p>More generally, a statement tag that is not one of PurePlate's keywords runs as a PHP statement: <code>{% user.count++ %}</code>.</p>
+<h3>Escaping in other contexts</h3>
+<p><code>{{ … }}</code> escapes for HTML text and quoted attributes. A value placed in JavaScript or in a URL needs another escaping, as in plain PHP, Twig or Blade: the template engine cannot guess it. Declare two small PHP functions once, in your own helpers:</p>
+<pre>&lt;?php
+<span class="c">// Any value, as a JavaScript literal that cannot break out of a &lt;script&gt; or an attribute.</span>
+function js($value): string
+{
+    return json_encode($value, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+}
+
+<span class="c">// A link typed by a user: only http(s), never javascript:</span>
+function safe_url(string $url): string
+{
+    return preg_match('~^https?://~i', $url) ? $url : '#';
+}</pre>
+<p>Then use the right form for each place:</p>
+<div class="table-box">
+<table>
+  <thead><tr><th>Where the value goes</th><th>Write</th></tr></thead>
+  <tbody>
+    <tr><td>HTML text, quoted attribute</td><td><code>&lt;p title="{{ title }}"&gt;{{ name }}&lt;/p&gt;</code></td></tr>
+    <tr><td>Inside <code>&lt;script&gt;</code></td><td><code>&lt;script&gt;var user = {% echo js(user) %};&lt;/script&gt;</code></td></tr>
+    <tr><td>JavaScript in an attribute</td><td><code>&lt;button onclick="select({{ js(name) }})"&gt;</code></td></tr>
+    <tr><td>Part of a URL</td><td><code>&lt;a href="/search?q={{ rawurlencode(q) }}"&gt;</code></td></tr>
+    <tr><td>A whole URL from a user</td><td><code>&lt;a href="{{ safe_url(user.website) }}"&gt;</code></td></tr>
+  </tbody>
+</table>
+</div>
+<div class="note"><strong>In <code>&lt;script&gt;</code>, <code>{% echo %}</code>; in an attribute, <code>{{ }}</code>.</strong> Inside a script, <code>{{ }}</code> would turn the JSON quotes into <code>&amp;quot;</code> and break the code. Inside an attribute, <code>{% echo %}</code> would let the first <code>"</code> of the JSON close the attribute. With these two forms, a value like <code>');alert(1);//</code> or <code>&lt;/script&gt;</code> stays plain data.</div>
+
+<h2 id="filters">5. Filters and functions</h2>
+<p>Every PHP function, and every function you declare, is a filter. The value becomes the <strong>first</strong> argument:</p>
+<div class="table-box">
+<table>
+  <thead><tr><th>You write</th><th>PHP runs</th></tr></thead>
+  <tbody>
+    <tr><td><code>{{ name|strtoupper }}</code></td><td><code>strtoupper($name)</code></td></tr>
+    <tr><td><code>{{ price|number_format(2, ',', ' ') }}</code></td><td><code>number_format($price, 2, ',', ' ')</code></td></tr>
+    <tr><td><code>{{ text|substr(0, 100) }}</code></td><td><code>substr($text, 0, 100)</code></td></tr>
+    <tr><td><code>{{ items|count }}</code></td><td><code>count($items)</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>When the value is not the first argument, call the function directly:</p>
+<pre><span class="v">{{ date('Y-m-d', timestamp) }}</span>
+<span class="v">{{ implode(', ', tags) }}</span></pre>
+<p>A filter applies to <strong>the value just before it</strong>, wherever it stands: in a ternary, in function arguments, in an array, after <code>=</code>. Any operator ends the value; parentheses widen it.</p>
+<div class="table-box">
+<table>
+  <thead><tr><th>You write</th><th>PHP runs</th></tr></thead>
+  <tbody>
+    <tr><td><code>{{ isAdmin ? name|strtoupper : 'guest' }}</code></td><td><code>$isAdmin ? strtoupper($name) : 'guest'</code></td></tr>
+    <tr><td><code>{{ sprintf('%s!', name|ucfirst) }}</code></td><td><code>sprintf('%s!', ucfirst($name))</code></td></tr>
+    <tr><td><code>{% set title = name|strtoupper %}</code></td><td><code>$title = strtoupper($name)</code></td></tr>
+    <tr><td><code>{{ items|count &gt; 1 }}</code></td><td><code>count($items) &gt; 1</code></td></tr>
+    <tr><td><code>{{ user.getName()|ucfirst }}</code></td><td><code>ucfirst($user-&gt;getName())</code></td></tr>
+    <tr><td><code>{{ price * quantity|round }}</code></td><td><code>$price * round($quantity)</code></td></tr>
+    <tr><td><code>{{ (price * quantity)|round }}</code></td><td><code>round(($price * $quantity))</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p><code>is empty</code> and <code>is not empty</code> follow the same rule: <code>{% if user.active and cart is empty %}</code> is <code>$user-&gt;active and empty($cart)</code>.</p>
+
+<h2 id="control">6. Conditions and loops</h2>
+<pre><span class="k">{% if</span> <span class="v">user.isAdmin</span> <span class="k">%}</span> … <span class="k">{% elseif</span> <span class="v">user.isEditor</span> <span class="k">%}</span> … <span class="k">{% else %}</span> … <span class="k">{% endif %}</span>
+
+<span class="k">{% foreach</span> <span class="v">items as item</span> <span class="k">%}</span> … <span class="k">{% endforeach %}</span>
+<span class="k">{% foreach</span> <span class="v">items as key =&gt; item</span> <span class="k">%}</span> … <span class="k">{% endforeach %}</span>
+
+<span class="k">{% for</span> <span class="v">i = 0; i &lt; 10; i++</span> <span class="k">%}</span> … <span class="k">{% endfor %}</span>
+
+<span class="k">{% while</span> <span class="v">queue</span> <span class="k">%}</span> … <span class="k">{% endwhile %}</span></pre>
+<h3>switch</h3>
+<pre><span class="k">{% switch</span> <span class="v">user.role</span> <span class="k">%}</span>
+    <span class="k">{% case</span> <span class="v">'admin'</span> <span class="k">%}</span>
+        &lt;span&gt;Administrator&lt;/span&gt;
+    <span class="k">{% break %}</span>
+    <span class="k">{% case</span> <span class="v">'editor'</span> <span class="k">%}</span>
+    <span class="k">{% case</span> <span class="v">'author'</span> <span class="k">%}</span>
+        &lt;span&gt;Writer&lt;/span&gt;
+    <span class="k">{% break %}</span>
+    <span class="k">{% default %}</span>
+        &lt;span&gt;Guest&lt;/span&gt;
+<span class="k">{% endswitch %}</span></pre>
+<p>It is PHP's <code>switch</code>, with PHP's rules: values are compared with <code>==</code>, and a <code>case</code> without <code>{% break %}</code> runs into the next one. That is how <code>'editor'</code> and <code>'author'</code> share the same output above. A case can be any expression: <code>{% case Order::STATUS_PAID %}</code>.</p>
+<p>Indent the cases as you like: PurePlate opens the <code>switch</code> at its first <code>case</code>, so the spaces in between are not a problem.</p>
+<div class="note"><strong>Do not forget <code>{% break %}</code>.</strong> Without it, the next case is printed too, exactly as in PHP.</div>
+<p>Conditions are PHP expressions, with readable words:</p>
+<div class="table-box">
+<table>
+  <thead><tr><th>You write</th><th>PHP runs</th></tr></thead>
+  <tbody>
+    <tr><td><code>items is empty</code></td><td><code>empty($items)</code></td></tr>
+    <tr><td><code>items is not empty</code></td><td><code>!empty($items)</code></td></tr>
+    <tr><td><code>not user.active</code></td><td><code>!$user-&gt;active</code></td></tr>
+    <tr><td><code>(age &gt;= 18 and hasPermit) or role == 'admin'</code></td><td><code>($age &gt;= 18 and $hasPermit) or $role == 'admin'</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>Each <code>end…</code> must close the structure opened last. A mistake stops the compilation with a clear message, see <a href="#errors">Errors</a>.</p>
+
+<h2 id="variables">7. Variables and globals</h2>
+<pre><span class="k">{% set</span> <span class="v">total = price * quantity</span> <span class="k">%}</span>
+<span class="v">{{ total }}</span>
+<span class="k">{% set</span> <span class="v">user.name = 'Fady'</span> <span class="k">%}</span></pre>
+<div class="note"><strong><code>and</code> and <code>or</code> are PHP's.</strong> They bind weaker than <code>=</code>: <code>{% set ok = a and b %}</code> sets <code>ok</code> to <code>a</code>. In an assignment, write <code>&amp;&amp;</code> and <code>||</code>.</div>
+<h3>Globals</h3>
+<p>Globals are available in every template, without passing them to each render:</p>
+<pre>$plate = new Engine(__DIR__ . '/templates', false, null, [
+    'siteTitle' =&gt; 'My Site',
+    'version'   =&gt; '1.0',
+]);</pre>
+<p>Global names must be strings. A render that passes a variable with the same name as a global and a different value stops with <code>Context key "siteTitle" conflicts with a global variable</code>, so a template never shows the wrong one silently. The name <code>_plate</code> is reserved: it holds the engine.</p>
+<p>Names follow PHP: a bare word that PHP reads as a keyword (<code>list</code>, <code>default</code>, <code>class</code>, <code>new</code>…) is not a variable. Through an object it works: <code>page.list</code>.</p>
+
+<h2 id="layouts">8. Layouts and blocks</h2>
+<pre><span class="c">{# layout.tpl #}</span>
+&lt;html&gt;
+&lt;head&gt;&lt;title&gt;<span class="k">{% block</span> <span class="v">title</span> <span class="k">%}</span>My site<span class="k">{% endblock %}</span>&lt;/title&gt;&lt;/head&gt;
+&lt;body&gt;
+  <span class="k">{% block</span> <span class="v">content</span> <span class="k">%}{% endblock %}</span>
+&lt;/body&gt;
+&lt;/html&gt;</pre>
+<pre><span class="c">{# page.tpl #}</span>
+<span class="k">{% extends</span> <span class="v">"layout.tpl"</span> <span class="k">%}</span>
+
+<span class="k">{% block</span> <span class="v">title</span> <span class="k">%}</span>Home<span class="k">{% endblock %}</span>
+
+<span class="k">{% block</span> <span class="v">content</span> <span class="k">%}</span>
+  &lt;h1&gt;Welcome, <span class="v">{{ user.name }}</span>&lt;/h1&gt;
+<span class="k">{% endblock %}</span></pre>
+<p>The page is rendered first, then its layout. Rules:</p>
+<ol>
+  <li>The layout receives the same variables as the page.</li>
+  <li>The deepest template wins: a block defined by the page replaces the layout's.</li>
+  <li>A block the page does not define keeps the layout's default content.</li>
+  <li>A layout can extend another layout, on any number of levels, and blocks can be nested.</li>
+  <li>In a template that extends, text outside the blocks is ignored.</li>
+  <li>In a template that does not extend, a block is printed where it stands.</li>
+</ol>
+<p>Block content is trimmed. The block name can be written with or without quotes: <code>{% block content %}</code> or <code>{% block "content" %}</code>.</p>
+<div class="note"><strong>No <code>parent()</code>.</strong> A block replaces the layout's block entirely; it cannot append to it. Split the layout into smaller blocks instead.</div>
+<h3>A layout inside a layout</h3>
+<p>A section layout fills a block of the base layout, and opens a new block inside it for its pages. This is how an admin area, a blog or an account section shares one HTML shell with the rest of the site.</p>
+<pre><span class="c">{# base.tpl: the HTML shell #}</span>
+&lt;html&gt;
+&lt;head&gt;&lt;title&gt;<span class="k">{% block</span> <span class="v">title</span> <span class="k">%}</span>My site<span class="k">{% endblock %}</span>&lt;/title&gt;&lt;/head&gt;
+&lt;body&gt;
+<span class="k">{% block</span> <span class="v">body</span> <span class="k">%}{% endblock %}</span>
+&lt;/body&gt;
+&lt;/html&gt;</pre>
+<pre><span class="c">{# admin.tpl: the admin section, inside the shell #}</span>
+<span class="k">{% extends</span> <span class="v">"base.tpl"</span> <span class="k">%}</span>
+
+<span class="k">{% block</span> <span class="v">body</span> <span class="k">%}</span>
+&lt;nav&gt;Admin menu&lt;/nav&gt;
+&lt;main&gt;
+    <span class="k">{% block</span> <span class="v">content</span> <span class="k">%}{% endblock %}</span>
+&lt;/main&gt;
+<span class="k">{% endblock %}</span></pre>
+<pre><span class="c">{# users.tpl: one admin page #}</span>
+<span class="k">{% extends</span> <span class="v">"admin.tpl"</span> <span class="k">%}</span>
+
+<span class="k">{% block</span> <span class="v">title</span> <span class="k">%}</span>Users<span class="k">{% endblock %}</span>
+
+<span class="k">{% block</span> <span class="v">content</span> <span class="k">%}</span>
+&lt;h1&gt;Users&lt;/h1&gt;
+<span class="k">{% endblock %}</span></pre>
+<p>Rendering <code>users.tpl</code> gives the shell, the admin menu, and the page inside <code>&lt;main&gt;</code>:</p>
+<pre>&lt;html&gt;
+&lt;head&gt;&lt;title&gt;Users&lt;/title&gt;&lt;/head&gt;
+&lt;body&gt;
+&lt;nav&gt;Admin menu&lt;/nav&gt;
+&lt;main&gt;
+    &lt;h1&gt;Users&lt;/h1&gt;&lt;/main&gt;&lt;/body&gt;
+&lt;/html&gt;</pre>
+<p>Each page of the section chooses which block it fills:</p>
+<div class="table-box">
+<table>
+  <thead><tr><th>A page that extends <code>admin.tpl</code>…</th><th>Gets</th></tr></thead>
+  <tbody>
+    <tr><td>defines <code>content</code></td><td>The admin menu, with its content in <code>&lt;main&gt;</code>.</td></tr>
+    <tr><td>defines <code>title</code></td><td>Its own title. Without it, <code>My site</code> from the base.</td></tr>
+    <tr><td>defines <code>body</code></td><td>Its own body only: the admin menu and <code>content</code> are replaced too. Useful for a login page without the menu.</td></tr>
+    <tr><td>defines nothing</td><td>The admin menu with an empty <code>&lt;main&gt;</code>.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>It works because the page is rendered first: when <code>admin.tpl</code> reaches <code>{% block content %}</code>, the page's content already exists and is printed inside <code>body</code>. Then <code>base.tpl</code> receives that whole <code>body</code>.</p>
+
+<h2 id="includes">9. Includes</h2>
+<pre><span class="k">{% include</span> <span class="v">"partials/header.tpl"</span> <span class="k">%}</span></pre>
+<p>The path is relative to the template folder, not to the current template. The included template sees every current variable, including those created with <code>{% set %}</code> or by a <code>foreach</code>. Variables it changes do not come back: an include cannot break its caller. An include can itself extend a layout and use blocks; they stay separate from the caller's.</p>
+<p>The name can be any expression: <code>{% include sprintf('cards/%s.tpl', type) %}</code>.</p>
+
+<h2 id="php">10. Plain PHP templates</h2>
+<p>A file ending in <code>.php</code> is not compiled: it is rendered as plain PHP, with the same layout helpers on <code>$this</code>.</p>
+<pre>&lt;?php $this-&gt;extend('layout.php') ?&gt;
+
+&lt;?php $this-&gt;startBlock('content') ?&gt;
+  &lt;h1&gt;&lt;?= htmlspecialchars($title) ?&gt;&lt;/h1&gt;
+&lt;?php $this-&gt;endBlock() ?&gt;</pre>
+<pre>&lt;!-- layout.php --&gt;
+&lt;main&gt;&lt;?= $this-&gt;block('content') ?&gt;&lt;/main&gt;</pre>
+<div class="table-box">
+<table>
+  <thead><tr><th>Method</th><th>Behavior</th></tr></thead>
+  <tbody>
+    <tr><td><code>$this-&gt;extend('layout.php')</code></td><td>Renders this layout after the current file, with the same variables.</td></tr>
+    <tr><td><code>$this-&gt;startBlock('name')</code></td><td>Starts capturing a block.</td></tr>
+    <tr><td><code>$this-&gt;endBlock()</code></td><td>Ends the block. The first definition wins, then it is printed.</td></tr>
+    <tr><td><code>$this-&gt;block('name')</code></td><td>Returns the content of a block, or an empty string.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>In plain PHP templates, escaping is yours, and a <code>.php</code> file can only extend another <code>.php</code> file.</p>
+
+<h2 id="errors">11. Errors</h2>
+<p>Line N of a compiled file is line N of its template, always. When something fails, PurePlate throws an <code>ErrorException</code> whose <code>getFile()</code> and <code>getLine()</code> are the template file and line, even inside a layout or an include:</p>
+<pre>PurePlate Error: Undefined variable: username [At: templates/page.tpl:14]</pre>
+<div class="table-box">
+<table>
+  <thead><tr><th>When</th><th>Message</th></tr></thead>
+  <tbody>
+    <tr><td>An <code>end…</code> without an opening tag</td><td><code>Unexpected 'endif' (missing opening tag)</code></td></tr>
+    <tr><td>An <code>end…</code> that closes the wrong structure</td><td><code>Unexpected 'endif', expected 'endforeach' (opened at line 9)</code></td></tr>
+    <tr><td>A structure never closed</td><td><code>Unclosed 'if'</code>, at the line that opened it</td></tr>
+    <tr><td>A <code>case</code> or <code>default</code> outside a <code>switch</code></td><td><code>Unexpected 'case' outside of a 'switch'</code></td></tr>
+    <tr><td>A <code>switch</code> with no <code>case</code></td><td><code>'switch' without 'case' (opened at line 4)</code></td></tr>
+    <tr><td>A <code>block</code> never closed, or crossing an <code>if</code></td><td><code>Unclosed 'block'</code> / <code>Unexpected 'endblock', expected 'endif' (opened at line 3)</code></td></tr>
+    <tr><td><code>break</code> or <code>continue</code> outside a loop</td><td><code>'break' outside of a loop or switch</code>, <code>'break 2' needs 2 nested loops or switch</code></td></tr>
+    <tr><td>A tag not closed on its line</td><td><code>Unclosed '{{' (a tag must end on the line where it starts)</code></td></tr>
+    <tr><td>An expression that is not valid PHP</td><td>PHP's syntax error, for example <code>syntax error, unexpected ')'</code></td></tr>
+    <tr><td>A PHP warning or notice while rendering</td><td>PHP's message, for example <code>Undefined variable: username</code></td></tr>
+    <tr><td>An exception thrown by your code</td><td>Its message</td></tr>
+    <tr><td>An included template that does not exist</td><td><code>Template not found: …</code>, at the line of the <code>include</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>Syntax mistakes are found when the template is compiled, before anything is printed. Warnings and notices follow your <code>error_reporting</code> setting: those it excludes are ignored.</p>
+<div class="note"><strong>Your exceptions are wrapped.</strong> An exception thrown by your code during a render reaches you as an <code>ErrorException</code> pointing at the template. The original is in <code>getPrevious()</code>.</div>
+<p>Two errors are thrown before any template is involved: <code>RuntimeException: Template not found: …</code> when the template given to <code>render()</code> does not exist, and <code>RuntimeException: Unable to write cache file: …</code> when the cache folder is not writable.</p>
+
+<h2 id="cache">12. Cache: dev and production</h2>
+<p>Each template is compiled once to a PHP file in the cache folder, named after the template and a hash of its full path. The file is written to a temporary name, then renamed, so a request never reads a half-written file.</p>
+<div class="table-box">
+<table>
+  <thead><tr><th>Mode</th><th>Behavior</th></tr></thead>
+  <tbody>
+    <tr><td><code>devMode</code> = <code>true</code></td><td>Recompiles a template when it is newer than its compiled file. Edit, refresh.</td></tr>
+    <tr><td><code>devMode</code> = <code>false</code> (default)</td><td>Compiles a template the first time it is used, then trusts the compiled file. No check on the template at each render.</td></tr>
+  </tbody>
+</table>
+</div>
+<pre>$plate = new Engine(__DIR__ . '/templates', true);                                <span class="c">// dev</span>
+$plate = new Engine(__DIR__ . '/templates', false, __DIR__ . '/var/cache/plate'); <span class="c">// production</span></pre>
+<div class="note"><strong>In production, clear the cache folder when you deploy new templates.</strong> Without <code>devMode</code>, a changed template is never recompiled on its own.</div>
+<p>Set your own cache folder in production. The default, <code>&lt;system temp dir&gt;/pp_cache</code>, is shared with other programs and may be cleaned by the system. PurePlate creates the folder if it does not exist.</p>
+
+<h2 id="performance">13. Performance</h2>
+<p>The <code>benchmark/</code> folder renders the same page with PurePlate and Twig: a layout with two blocks, a loop over 100 objects, a ternary, two filters and HTML escaping. It checks that both produce the same HTML before measuring.</p>
+<div class="table-box">
+<table>
+  <thead><tr><th></th><th>PurePlate</th><th>Twig 3.30</th><th></th></tr></thead>
+  <tbody>
+    <tr><td>Render</td><td>82 µs</td><td>194 µs</td><td><strong>2.4× faster</strong></td></tr>
+    <tr><td>New engine + render (≈ one request)</td><td>83 µs</td><td>221 µs</td><td><strong>2.7× faster</strong></td></tr>
+  </tbody>
+</table>
+</div>
+<p>PHP 8.2.29, OPcache on, Xdebug off, Debian VM, local disk. Best of 5 rounds of 2,000 renders. Run it on your machine:</p>
+<pre>$ composer install
+$ php -d xdebug.mode=off -d opcache.enable_cli=1 benchmark/run.php   <span class="c"># first run compiles the templates</span>
+$ php -d xdebug.mode=off -d opcache.enable_cli=1 benchmark/run.php   <span class="c"># measures</span></pre>
+<p>Why it is fast: <code>user.name</code> compiles to <code>$user-&gt;name</code>, a filter to a function call, and nothing is resolved at runtime. A function that looks for a getter before each property read costs about 20× more per access, which is most of the gap with Twig.</p>
+
+</article>
+</div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">PurePlate · <a href="https://github.com/michelphp/pure-plate">Source on GitHub</a></div>
+</footer>
+
+</body>
+</html>

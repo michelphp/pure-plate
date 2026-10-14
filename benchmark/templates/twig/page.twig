@@ -1,0 +1,12 @@
+{% extends "layout.twig" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ title|upper }}</h1>
+{% if items is not empty %}
+<ul>
+{% for item in items %}
+  <li class="{{ item.stock > 0 ? 'in' : 'out' }}">{{ item.name }} — {{ item.price|number_format(2) }} €</li>
+{% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

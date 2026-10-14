@@ -33,29 +33,25 @@ final class PhpRenderer
 
     public function render(string $view, array $context = []): string
     {
-        $filename = $this->findTemplateFile($view);
+        // Each render owns its layout and blocks, so an include never disturbs its caller.
+        $caller = [$this->layout, $this->blocks];
         $this->layout = null;
-
-        $level = ob_get_level();
-        ob_start();
+        $this->blocks = [];
 
         try {
-            $context = $this->mergeContext($context);
-            extract($context);
-            include $filename;
-            $content = ob_get_clean();
-        } catch (Throwable $e) {
-            while (ob_get_level() > $level) {
-                ob_end_clean();
+            $content = $this->capture($this->findTemplateFile($view), $this->mergeContext($context));
+
+            // The child is rendered first, then each layout up the chain, with the same context.
+            while ($this->layout !== null) {
+                $layout = $this->layout;
+                $this->layout = null;
+                $content = $this->capture($this->findTemplateFile($layout), $this->mergeContext($context));
             }
-            throw $e;
-        }
 
-        if ($this->layout === null) {
             return $content;
+        } finally {
+            [$this->layout, $this->blocks] = $caller;
         }
-
-        return $this->render($this->layout);
     }
 
     public function extend(string $layout): void
@@ -65,11 +61,7 @@ final class PhpRenderer
 
     public function startBlock(string $name): void
     {
-        $content = $this->block($name);
         $this->blockStack[] = $name;
-        if (!empty($content)) {
-            echo $content;
-        }
         ob_start();
     }
 
@@ -81,15 +73,39 @@ final class PhpRenderer
 
         $content = trim(ob_get_clean());
         $name = array_pop($this->blockStack);
-        $this->blocks[$name] = $content;
-        if (!empty($this->blockStack)) {
-            echo $content;
+
+        // The child template is rendered before its layout, so the first definition wins.
+        if (!isset($this->blocks[$name])) {
+            $this->blocks[$name] = $content;
         }
+
+        echo $this->blocks[$name];
     }
 
     public function block(string $name): string
     {
         return $this->blocks[$name] ?? '';
+    }
+
+    private function capture(string $filename, array $context): string
+    {
+        $level = ob_get_level();
+        ob_start();
+
+        try {
+            // No named local variable in this closure: the context may use any key.
+            (function () {
+                extract(func_get_arg(1));
+                include func_get_arg(0);
+            })($filename, $context);
+
+            return ob_get_clean();
+        } catch (Throwable $e) {
+            while (ob_get_level() > $level) {
+                ob_end_clean();
+            }
+            throw $e;
+        }
     }
 
     private function findTemplateFile(string $view): string
@@ -103,8 +119,8 @@ final class PhpRenderer
 
     private function mergeContext(array $context): array
     {
-        foreach ($context as $key => $_) {
-            if (array_key_exists($key, $this->globals)) {
+        foreach ($context as $key => $value) {
+            if (array_key_exists($key, $this->globals) && $this->globals[$key] !== $value) {
                 throw new InvalidArgumentException(sprintf(
                     'Context key "%s" conflicts with a global variable',
                     $key

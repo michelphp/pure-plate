@@ -3,7 +3,8 @@
   "description": "PurePlate is a lightweight and versatile template rendering library for native PHP.",
   "type": "library",
   "require": {
-    "php": ">=7.4"
+    "php": ">=7.4",
+    "ext-tokenizer": "*"
   },
   "license": "MPL-2.0",
   "authors": [
@@ -13,11 +14,16 @@
   ],
   "autoload": {
     "psr-4": {
-      "Michel\\PurePlate\\": "src",
+      "Michel\\PurePlate\\": "src"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
       "Test\\Michel\\PurePlate\\": "tests"
     }
   },
   "require-dev": {
-    "michel/unitester": "^1.0.0"
+    "michel/unitester": "^1.0.0",
+    "twig/twig": "^3.30"
   }
 }

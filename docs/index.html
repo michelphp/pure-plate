@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PurePlate — PHP templates that compile to the PHP you would write</title>
+<meta name="description" content="PurePlate is a PHP template engine with a Twig-like syntax that compiles to plain, cached PHP. Every PHP function is a filter, errors point at your template line, and it renders ~2.4× faster than Twig 3. Two classes, zero dependencies, PHP 7.4+.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="logo" href="./">pureplate<span>/</span></a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="#how">How it works</a>
+      <a href="#example">Example</a>
+      <a href="#why">Why PurePlate</a>
+      <a href="#compare">Compare</a>
+      <a href="docs.html">Documentation</a>
+      <a href="https://github.com/michelphp/pure-plate">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div class="hero">
+      <p class="eyebrow">PHP 7.4+ · Zero dependencies · Two classes</p>
+      <h1>Templates that read like PHP, and run as PHP.</h1>
+      <p class="lead">If you know PHP, you already know PurePlate: same rules, lighter syntax. Your templates compile once to the plain PHP you would have written by hand, and render ~2.4× faster than Twig.</p>
+      <div class="actions">
+        <a class="button primary" href="docs.html#install">Install PurePlate</a>
+        <a class="button" href="docs.html">Read the docs</a>
+      </div>
+    </div>
+  </div>
+
+  <section id="how">
+    <div class="wrap">
+      <p class="label">How it works</p>
+      <h2>Write. Compile. Render.</h2>
+      <p class="section-lead">Three steps, nothing hidden. What you read in a template is exactly what runs.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>1. Write</h3>
+          <p>A template is HTML with three kinds of tags: <code>{{ user.name }}</code> prints, <code>{% foreach items as item %}</code> controls, <code>{# … #}</code> comments.</p>
+        </div>
+        <div class="card">
+          <h3>2. Compile</h3>
+          <p>On first use, the template becomes a plain PHP file in the cache: <code>user.name</code> is <code>$user-&gt;name</code>, <code>name|strtoupper</code> is <code>strtoupper($name)</code>. Line 14 stays line 14.</p>
+        </div>
+        <div class="card">
+          <h3>3. Render</h3>
+          <p>Every render includes that PHP file, cached by OPcache. Nothing is interpreted at runtime. If something fails, the error points at your template file and line.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="example">
+    <div class="wrap">
+      <p class="label">Example</p>
+      <h2>Write this. Run plain PHP.</h2>
+      <p class="section-lead">A page that greets a user and lists products, inside a layout. Write it with PurePlate, and compare with plain PHP, with Twig, and with what PurePlate actually runs.</p>
+      <p class="terminal-title">page.tpl · PurePlate · 7 lines</p>
+<pre><span class="k">{% extends</span> <span class="v">"layout.tpl"</span> <span class="k">%}</span>
+<span class="k">{% block</span> <span class="v">content</span> <span class="k">%}</span>
+&lt;h1&gt;Hello, <span class="v">{{ user.name|strtoupper }}</span>!&lt;/h1&gt;
+<span class="k">{% foreach</span> <span class="v">items as item</span> <span class="k">%}</span>
+  &lt;li&gt;<span class="v">{{ item.title }}</span> — <span class="v">{{ item.price|number_format(2) }}</span> €&lt;/li&gt;
+<span class="k">{% endforeach %}</span>
+<span class="k">{% endblock %}</span></pre>
+      <div class="grid">
+        <div class="card">
+          <p class="terminal-title">page.php · plain PHP · 7 lines</p>
+<pre>&lt;?php ob_start() ?&gt;
+&lt;h1&gt;Hello, &lt;?= htmlspecialchars(strtoupper($user-&gt;name), ENT_QUOTES) ?&gt;!&lt;/h1&gt;
+&lt;?php foreach ($items as $item): ?&gt;
+  &lt;li&gt;&lt;?= htmlspecialchars($item-&gt;title, ENT_QUOTES) ?&gt; — &lt;?= htmlspecialchars(number_format($item-&gt;price, 2), ENT_QUOTES) ?&gt; €&lt;/li&gt;
+&lt;?php endforeach ?&gt;
+&lt;?php $content = ob_get_clean() ?&gt;
+&lt;?php require 'layout.php' ?&gt;</pre>
+          <p>To know: escape every output by hand, wire the layout yourself with output buffering.</p>
+        </div>
+        <div class="card">
+          <p class="terminal-title">page.twig · Twig · 7 lines</p>
+<pre>{% extends "layout.twig" %}
+{% block content %}
+&lt;h1&gt;Hello, {{ user.name|upper }}!&lt;/h1&gt;
+{% for item in items %}
+  &lt;li&gt;{{ item.title }} — {{ item.price|number_format(2) }} €&lt;/li&gt;
+{% endfor %}
+{% endblock %}</pre>
+          <p>To know: Twig's own language and filter names, attributes resolved at runtime, 3 dependencies, PHP 8.1+.</p>
+        </div>
+        <div class="card">
+          <p class="terminal-title">cache · what PurePlate runs</p>
+<pre>&lt;?php $_plate-&gt;extend("layout.tpl"); ?&gt;
+&lt;?php $this-&gt;startBlock('content'); ?&gt;
+&lt;h1&gt;Hello, &lt;?php echo htmlspecialchars((string)(strtoupper($user-&gt;name)), ENT_QUOTES); ?&gt;!&lt;/h1&gt;
+&lt;?php foreach ($items as $item): ?&gt;
+  &lt;li&gt;&lt;?php echo htmlspecialchars((string)($item-&gt;title), ENT_QUOTES); ?&gt; — …&lt;/li&gt;
+&lt;?php endforeach; ?&gt;
+&lt;?php $this-&gt;endblock(); ?&gt;</pre>
+          <p>To know: nothing. It is the plain PHP from the first card, escaped and wired for you.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="why">
+    <div class="wrap">
+      <p class="label">Why PurePlate</p>
+      <h2>Made for PHP developers.</h2>
+      <p class="section-lead">Templates print data, loop, test, and reuse a layout. You need that to be safe, fast and readable, not a new programming language.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>Nothing to learn</h3>
+          <p>A bare word is a variable, the dot is <code>-&gt;</code>, the pipe calls a function. Everything else is written as in PHP, because it <em>is</em> PHP.</p>
+        </div>
+        <div class="card">
+          <h3>Every PHP function is a filter</h3>
+          <p><code>strtoupper</code>, <code>number_format</code>, <code>substr</code>, <code>count</code>, your own functions: all available, no registration, no wrappers.</p>
+        </div>
+        <div class="card">
+          <h3>Errors point at your template</h3>
+          <p>In a page, a layout or an include, the exception's <code>getFile()</code> and <code>getLine()</code> are the template file and line, not the cache.</p>
+        </div>
+        <div class="card">
+          <h3>Fast, and safe by default</h3>
+          <p>~2.4× faster than Twig 3 on the same page. <code>{{ … }}</code> is always escaped with <code>htmlspecialchars</code>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="compare">
+    <div class="wrap">
+      <p class="label">Compare</p>
+      <h2>The comfort of Twig, the speed of plain PHP.</h2>
+      <p class="section-lead">Twig brings its own language and resolves it at runtime. Plain PHP is fast but leaves escaping and layouts to you. PurePlate writes the plain PHP for you.</p>
+      <div class="table-box">
+        <table>
+          <thead>
+            <tr><th></th><th>Plain PHP</th><th>Twig 3.30</th><th class="us">PurePlate</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Expression language</td><td>PHP</td><td>Twig's own language</td><td class="us">PHP, lighter syntax</td></tr>
+            <tr><td>Escaping</td><td>By hand, on every output</td><td>Automatic</td><td class="us">Automatic</td></tr>
+            <tr><td>Layouts &amp; blocks</td><td>By hand, with output buffering</td><td>Yes</td><td class="us">Yes, any number of levels</td></tr>
+            <tr><td>Filters</td><td>Function calls</td><td>Registered by name</td><td class="us">Any PHP function</td></tr>
+            <tr><td><code>user.name</code></td><td><code>$user-&gt;name</code></td><td>Resolved at runtime</td><td class="us">Compiled to <code>$user-&gt;name</code></td></tr>
+            <tr><td>Render time (benchmark)</td><td>Not measured</td><td>194 µs</td><td class="us">82 µs</td></tr>
+            <tr><td>Dependencies</td><td>None</td><td>3 Symfony packages</td><td class="us">None</td></tr>
+            <tr><td>PHP version</td><td>Any</td><td>8.1+</td><td class="us">7.4+</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="never">
+    <div class="wrap">
+      <p class="label">Scope</p>
+      <h2>What PurePlate will never do</h2>
+      <p class="section-lead">Two classes you can read in one sitting stay a library you can trust. PurePlate will not grow into another language.</p>
+      <ul class="never">
+        <li>resolve attributes at runtime</li>
+        <li>guess a getter behind a dot</li>
+        <li>mix up arrays and objects</li>
+        <li>invent its own expression language</li>
+        <li>make you register a filter</li>
+        <li>load plugins</li>
+        <li>require a dependency</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="get">
+    <div class="wrap">
+      <p class="label">Get PurePlate</p>
+      <h2>One command. Zero dependencies.</h2>
+      <p class="section-lead">PHP 7.4 or higher, with the standard <code>tokenizer</code> extension. Run <code>composer require michel/pure-plate</code> and render your first template.</p>
+      <div class="actions">
+        <a class="button primary" href="docs.html#install">Install with Composer</a>
+        <a class="button" href="docs.html#quick-start">Quick start guide</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">PurePlate · <a href="https://github.com/michelphp/pure-plate">Source on GitHub</a> · <a href="docs.html">Documentation</a></div>
+</footer>
+
+</body>
+</html>

@@ -44,8 +44,8 @@ final class PhpRendererTest extends TestCase
 
     public function testRenderViewWithBlock(): void
     {
-        $expectedOutput = '';
-        $output = $this->renderer->render('test_block.php');
+        $expectedOutput = 'Block Content';
+        $output = trim($this->renderer->render('test_block.php'));
         $this->assertEquals($expectedOutput, $output);
     }
 
@@ -58,13 +58,15 @@ final class PhpRendererTest extends TestCase
 
     public function testStartAndEndBlocks(): void
     {
+        ob_start();
         $this->renderer->startBlock('content');
         echo 'Block Content';
         $this->renderer->endBlock();
+        $echoed = ob_get_clean();
 
         $expectedOutput = 'Block Content';
-        $output = $this->renderer->block('content');
-        $this->assertEquals($expectedOutput, $output);
+        $this->assertEquals($expectedOutput, $echoed);
+        $this->assertEquals($expectedOutput, $this->renderer->block('content'));
     }
 
     public function testRenderViewNotFound(): void

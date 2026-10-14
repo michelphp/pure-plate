@@ -1,0 +1,12 @@
+{% extends "layout.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ title|strtoupper }}</h1>
+{% if items is not empty %}
+<ul>
+{% foreach items as item %}
+  <li class="{{ item.stock > 0 ? 'in' : 'out' }}">{{ item.name }} — {{ item.price|number_format(2) }} €</li>
+{% endforeach %}
+</ul>
+{% endif %}
+{% endblock %}

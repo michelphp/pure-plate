@@ -3,7 +3,6 @@
 namespace Michel\PurePlate;
 
 use ErrorException;
-use Exception;
 use InvalidArgumentException;
 use ParseError;
 use RuntimeException;
@@ -17,6 +16,8 @@ final class Engine
     private PhpRenderer $renderer;
     private array $blocks = [];
     private array $globals = [];
+    /** Cache file name => template path, to report errors in the template. */
+    private array $sources = [];
 
     public function __construct(
         string  $templateDir,
@@ -27,7 +28,7 @@ final class Engine
     {
         $this->templateDir = $templateDir;
         $this->devMode = $devMode;
-        $this->cacheDir = $cacheDir ?? sys_get_temp_dir() . '/plate_cache';
+        $this->cacheDir = $cacheDir ?? sys_get_temp_dir() . '/pp_cache';
         if (!is_dir($this->cacheDir)) {
             @mkdir($this->cacheDir, 0755, true);
         }
@@ -53,21 +54,7 @@ final class Engine
             return $render->render($filename, $context);
         }
 
-        $templatePath = $this->templateDir . '/' . ltrim($filename, '/');
-        if (!file_exists($templatePath)) {
-            throw new RuntimeException("Template not found: {$templatePath}");
-        }
-
-        $cacheFile = $this->getCacheFilename($filename);
-        if ($this->devMode === true || !$this->isCacheValid($templatePath, $cacheFile)) {
-            $compiledCode = $this->compile($templatePath);
-            try {
-                token_get_all($compiledCode, TOKEN_PARSE);
-                $this->saveToCache($cacheFile, trim($compiledCode) . PHP_EOL);
-            } catch (ParseError $e) {
-                $this->handleError($e, $compiledCode, $templatePath);
-            }
-        }
+        $cacheFile = $this->compileIfNeeded($filename);
 
         try {
             set_error_handler(function ($severity, $message, $file, $line) {
@@ -76,9 +63,9 @@ final class Engine
                 }
                 throw new ErrorException($message, 0, $severity, $file, $line);
             });
-            return $this->renderer->render(str_replace($this->cacheDir, '', realpath($cacheFile)), $context);
+            return $this->renderer->render(basename($cacheFile), $context);
         } catch (Throwable $e) {
-            $this->handleError($e, file_get_contents($cacheFile), $templatePath);
+            throw $this->mapToTemplate($e);
         } finally {
             restore_error_handler();
         }
@@ -89,42 +76,101 @@ final class Engine
      */
     public function extend(string $filename): void
     {
-        $_ = $this->render($filename);
-        $cacheFile = $this->getCacheFilename($filename);
-        $this->renderer->extend(str_replace($this->cacheDir, '', realpath($cacheFile)));
+        $cacheFile = $this->compileIfNeeded($filename);
+        $this->renderer->extend(basename($cacheFile));
     }
 
+    /**
+     * Compiles the template into the cache when needed and returns the cache file path.
+     *
+     * @throws ErrorException
+     */
+    private function compileIfNeeded(string $filename): string
+    {
+        $templatePath = $this->templateDir . '/' . ltrim($filename, '/');
+        $cacheFile = $this->getCacheFilename($templatePath);
+        $this->sources[basename($cacheFile)] = $templatePath;
+
+        if ($this->isCacheFresh($templatePath, $cacheFile)) {
+            return $cacheFile;
+        }
+
+        if (!file_exists($templatePath)) {
+            throw new RuntimeException("Template not found: {$templatePath}");
+        }
+        try {
+            $compiledCode = $this->compile($templatePath);
+            token_get_all($compiledCode, TOKEN_PARSE);
+        } catch (ParseError | ErrorException $e) {
+            throw $this->templateError($e, $templatePath, $e->getLine());
+        }
+        $this->saveToCache($cacheFile, $compiledCode);
+
+        return $cacheFile;
+    }
+
+    /**
+     * Production trusts the cache once written: clear the cache directory when deploying.
+     * Dev mode recompiles only the templates that changed.
+     */
+    private function isCacheFresh(string $templatePath, string $cacheFile): bool
+    {
+        if (!file_exists($cacheFile)) {
+            return false;
+        }
+        if (!$this->devMode) {
+            return true;
+        }
+        return file_exists($templatePath) && filemtime($cacheFile) > filemtime($templatePath);
+    }
+
+    /**
+     * One compiled line per template line, so a line number in the cache
+     * is the same line number in the template.
+     */
     private function compile(string $path): string
     {
-        $html = file_get_contents($path);
         $this->blocks = [];
-        $lines = explode(PHP_EOL, $html);
-        $output = "";
+
+        // A comment may span lines: keep its line breaks so that line numbers do not move.
+        $template = preg_replace_callback('/{#.*?#}/s', function ($m) {
+            return str_repeat("\n", substr_count($m[0], "\n"));
+        }, file_get_contents($path));
+
+        $lines = explode("\n", $template);
+        $lastIndex = count($lines) - 1;
 
         foreach ($lines as $i => $line) {
-            $num = $i + 1;
-
-            $line = preg_replace('/{#.*?#}/', '', $line);
-            if (trim($line) === '') {
-                $output .= $line .PHP_EOL;
-                continue;
-            }
-            $line = preg_replace_callback('/{{(.*?)}}|{% (.*?) %}/', function ($m) use ($num, $path) {
-                $isBlock = !empty($m[2]);
-                $content = trim($isBlock ? $m[2] : $m[1]);
-
-                if ($isBlock) {
-                    return $this->compileStructure($content, $num);
+            $leftover = preg_replace('/{{.*?}}|{%.*?%}/', '', $line);
+            foreach (['{{', '{%', '{#'] as $tag) {
+                if (strpos($leftover, $tag) !== false) {
+                    throw $this->syntaxError("Unclosed '$tag' (a tag must end on the line where it starts)", $i + 1);
                 }
+            }
 
-                $phpExpr = $this->parseTokens($content);
-                return "<?php /*L:$num;F:$path*/ echo htmlspecialchars((string)($phpExpr), ENT_QUOTES); ?>";
+            // Printed as text, whatever the short_open_tag setting.
+            $line = str_replace('<?xml', "<?php echo '<?xml'; ?>", $line);
 
+            // PHP swallows the newline right after a closing tag: echo it back when the line ends with {{ ... }}.
+            $endsWithOutput = $i < $lastIndex && substr(rtrim($line), -2) === '}}';
+
+            $line = preg_replace_callback('/{{(.*?)}}|{%(.*?)%}/', function ($m) use ($i) {
+                if (!empty($m[2])) {
+                    return $this->compileStructure(trim($m[2]), $i + 1);
+                }
+                $phpExpr = $this->parseTokens(trim($m[1]));
+                return "<?php echo htmlspecialchars((string)($phpExpr), ENT_QUOTES); ?>";
             }, $line);
 
-            $output .= $line .PHP_EOL;
+            $lines[$i] = $endsWithOutput ? $line . '<?php echo "\n"; ?>' : $line;
         }
-        return $output;
+
+        if (!empty($this->blocks)) {
+            $open = array_pop($this->blocks);
+            throw $this->syntaxError("Unclosed '{$open['type']}'", $open['line']);
+        }
+
+        return implode("\n", $lines);
     }
 
     private function compileStructure(string $rawContent, int $line): string
@@ -140,17 +186,27 @@ final class Engine
 
 
         if ($cmd === 'block') {
-            $blockName = trim($rawExpr, "\"' ");
-            return "<?php \$this->startBlock('$blockName'); ?>";
+            $this->blocks[] = ['type' => 'block', 'line' => $line];
+            $blockName = var_export(trim($rawExpr, "\"' "), true);
+            return "<?php \$this->startBlock($blockName); ?>";
         }
 
-        if ($cmd === 'endblock') {
-            return "<?php \$this->endblock(); ?>";
+        if ($cmd === 'break' || $cmd === 'continue') {
+            $levels = (int) ($rawExpr ?: 1);
+            $loops = array_filter($this->blocks, function ($open) {
+                return in_array($open['type'], ['foreach', 'for', 'while', 'switch'], true);
+            });
+            if (count($loops) < $levels) {
+                throw $this->syntaxError($levels === 1
+                    ? "'$cmd' outside of a loop or switch"
+                    : "'$cmd $levels' needs $levels nested loops or switch", $line);
+            }
+            return "<?php $cmd $levels; ?>";
         }
 
         if ($cmd === 'include') {
             $phpExpr = $this->parseTokens($rawExpr);
-            return "<?php \$_plate->render($phpExpr); ?>";
+            return "<?php echo \$_plate->render($phpExpr, get_defined_vars()); ?>";
         }
 
         if ($cmd === 'set') {
@@ -171,16 +227,38 @@ final class Engine
             return "<?php else: ?>";
         }
 
-        if (substr($cmd, 0, 3) === 'end') {
-            if (empty($this->blocks)) {
-                throw new \Exception(sprintf(
-                    "Unexpected '%s' at line %d (missing opening tag)",
-                    $cmd,
-                    $line
-                ));
+        if ($cmd === 'switch') {
+            // PHP allows no output between "switch" and its first "case": the first case opens it.
+            $this->blocks[] = ['type' => 'switch', 'line' => $line, 'subject' => $this->parseTokens($rawExpr)];
+            return '';
+        }
+
+        if ($cmd === 'case' || $cmd === 'default') {
+            $key = array_key_last($this->blocks);
+            if ($key === null || $this->blocks[$key]['type'] !== 'switch') {
+                throw $this->syntaxError("Unexpected '$cmd' outside of a 'switch'", $line);
             }
-            array_pop($this->blocks);
-            return "<?php $cmd; ?>";
+            $label = $cmd === 'case' ? 'case ' . $this->parseTokens($rawExpr) . ':' : 'default:';
+            if (!isset($this->blocks[$key]['subject'])) {
+                return "<?php $label ?>";
+            }
+            $subject = $this->blocks[$key]['subject'];
+            unset($this->blocks[$key]['subject']);
+            return "<?php switch ($subject): $label ?>";
+        }
+
+        if (substr($cmd, 0, 3) === 'end') {
+            $open = array_pop($this->blocks);
+            if ($open === null) {
+                throw $this->syntaxError("Unexpected '$cmd' (missing opening tag)", $line);
+            }
+            if (isset($open['subject'])) {
+                throw $this->syntaxError("'switch' without 'case' (opened at line {$open['line']})", $line);
+            }
+            if ($cmd !== 'end' . $open['type']) {
+                throw $this->syntaxError("Unexpected '$cmd', expected 'end{$open['type']}' (opened at line {$open['line']})", $line);
+            }
+            return $cmd === 'endblock' ? "<?php \$this->endBlock(); ?>" : "<?php $cmd; ?>";
         }
 
         $phpExpr = $this->parseTokens($rawContent);
@@ -195,157 +273,151 @@ final class Engine
         $res = "";
         $len = count($tokens);
 
+        // A filter or "is empty" applies to the value just before it: the value starts
+        // right after the last operator or opening bracket. Brackets save and restore it.
+        $start = 0;
+        $savedStarts = [];
+
         for ($i = 0; $i < $len; $i++) {
             $t = $tokens[$i];
+            [$id, $text] = is_array($t) ? $t : [null, $t];
+
+            if ($id === T_OPEN_TAG) {
+                continue;
+            }
 
             if ($t === '|') {
-                $filterName = '';
-                $hasParens = false;
-//                $filterIndex = -1;
+                $j = $this->nextToken($tokens, $i);
+                $filterName = $tokens[$j][1] ?? '';
+                $k = $this->nextToken($tokens, $j);
+                $hasArguments = ($tokens[$k] ?? null) === '(';
+                $i = $hasArguments ? $k : $j;
 
-                for ($j = $i + 1; $j < $len; $j++) {
-                    $nt = $tokens[$j];
-                    if (is_array($nt) && $nt[0] === T_WHITESPACE) {
-                        continue;
-                    }
-                    if (is_array($nt) && $nt[0] === T_STRING) {
-                        $filterName = $nt[1];
-                        $filterIndex = $j;
-
-                        for ($k = $j + 1; $k < $len; $k++) {
-                            $nnt = $tokens[$k];
-                            if (is_array($nnt) && $nnt[0] === T_WHITESPACE) {
-                                continue;
-                            }
-                            if ($nnt === '(') {
-                                $hasParens = true;
-                                $i = $k;
-                            } else {
-                                $i = $filterIndex;
-                            }
-                            break 2;
-                        }
-                        $i = $filterIndex;
-                        break;
-                    }
-                }
-
-                if ($hasParens) {
-                    $res = "$filterName(" . trim($res) . ", ";
-                } else {
-                    $res = "$filterName(" . trim($res) . ")";
+                $value = trim(substr($res, $start));
+                $res = substr($res, 0, $start) . "$filterName($value" . ($hasArguments ? ', ' : ')');
+                if ($hasArguments) {
+                    $savedStarts[] = $start;
+                    $start = strlen($res);
                 }
                 continue;
             }
 
-            if (is_array($t)) {
-                [$id, $text] = $t;
-                if ($id === T_OPEN_TAG) {
+            $word = strtolower($text);
+
+            if ($id === T_STRING && $word === 'is') {
+                $j = $this->nextToken($tokens, $i);
+                $k = $this->nextToken($tokens, $j);
+                $next = strtolower($tokens[$j][1] ?? '');
+                $afterNext = strtolower($tokens[$k][1] ?? '');
+                $test = $next === 'empty' ? 'empty' : ($next === 'not' && $afterNext === 'empty' ? '!empty' : null);
+                if ($test !== null) {
+                    $value = trim(substr($res, $start));
+                    $res = substr($res, 0, $start) . "$test($value)";
+                    $i = $test === 'empty' ? $j : $k;
                     continue;
                 }
+            }
 
-                $word = strtolower($text);
+            if ($id === T_STRING && $word === 'not') {
+                [$id, $text] = [null, '!'];
+            } elseif ($id === T_STRING || $id === T_EMPTY) {
+                // A function name is followed by "(", a class name by "::" or "\".
+                $next = $tokens[$this->nextToken($tokens, $i)] ?? null;
+                $isName = $next === '(' || (is_array($next) && in_array($next[0], [T_DOUBLE_COLON, T_NS_SEPARATOR], true));
 
-                if ($id === T_STRING && $word === 'is') {
-                    $nextWords = [];
-                    $nextIndexes = [];
-                    for ($j = $i + 1; $j < $len && count($nextWords) < 2; $j++) {
-                        if (is_array($tokens[$j]) && $tokens[$j][0] === T_WHITESPACE) {
-                            continue;
-                        }
-                        $nextWords[] = strtolower(is_array($tokens[$j]) ? $tokens[$j][1] : $tokens[$j]);
-                        $nextIndexes[] = $j;
-                    }
+                // A member comes after "->" or "::", a namespaced name after "\".
+                $trimmedRes = trim($res);
+                $isMember = substr($trimmedRes, -2) === '->' || substr($trimmedRes, -2) === '::' || substr($trimmedRes, -1) === '\\';
+                $isReserved = in_array($word, ['as', 'is', 'true', 'false', 'null', 'empty']);
+                $text = ($isMember || $isReserved || $isName) ? $text : '$' . $text;
+            } elseif ($t === '.') {
+                $text = '->';
+            }
 
-                    if (isset($nextWords[0]) && $nextWords[0] === 'empty') {
-                        $res = "empty(" . trim($res) . ")";
-                        $i = $nextIndexes[0];
-                        continue;
-                    }
-                    if (isset($nextWords[1]) && $nextWords[0] === 'not' && $nextWords[1] === 'empty') {
-                        $res = "!empty(" . trim($res) . ")";
-                        $i = $nextIndexes[1];
-                        continue;
-                    }
-                }
+            // Spaces right after an operator stay outside the next value.
+            $atValueStart = $start === strlen($res);
+            $res .= $text;
 
-                if ($id === T_STRING || $id === T_EMPTY) {
-                    $isFunction = false;
-                    for ($j = $i + 1; $j < $len; $j++) {
-                        if (is_array($tokens[$j]) && $tokens[$j][0] === T_WHITESPACE) continue;
-                        if ($tokens[$j] === '(') {
-                            $isFunction = true;
-                        }
-                        break;
-                    }
-
-                    if ($word === 'not') {
-                        $res .= '!';
-                        continue;
-                    }
-
-                    $trimmedRes = trim($res);
-                    $isProp = (substr($trimmedRes, -2) === '->');
-                    $isReserved = in_array($word, ['as', 'is', 'true', 'false', 'null', 'empty']);
-                    $res .= ($isProp || $isReserved || $isFunction) ? $text : '$' . $text;
-
-                } else {
-                    $res .= $text;
-                }
-            } else {
-                $res .= ($t === '.') ? '->' : $t;
+            if ($text === '(' || $text === '[') {
+                $savedStarts[] = $start;
+                $start = strlen($res);
+            } elseif ($text === ')' || $text === ']') {
+                $start = array_pop($savedStarts) ?? 0;
+            } elseif (($id === T_WHITESPACE && $atValueStart) || $this->isOperator($id, $text)) {
+                $start = strlen($res);
             }
         }
 
         return $res;
     }
 
-    private function handleError(\Throwable $e, string $compiled, string $path): void
+    /** Index of the next token that is not whitespace. */
+    private function nextToken(array $tokens, int $i): int
     {
-        $lines = explode("\n", $compiled);
-        $errorLine = $e->getLine();
-        $faultyCode = $lines[$errorLine - 1] ?? '';
+        do {
+            $i++;
+        } while (isset($tokens[$i]) && is_array($tokens[$i]) && $tokens[$i][0] === T_WHITESPACE);
+        return $i;
+    }
 
-        preg_match('/\/\*L:(\d+);F:(.*?)\*\//', $faultyCode, $m);
-        $currentFile = $m[2] ?? $path;
-        $currentLine = $m[1] ?? 'unknown';
+    private function isOperator(?int $id, string $text): bool
+    {
+        if ($id === null) {
+            return in_array($text, ['+', '-', '*', '/', '%', '=', '<', '>', '!', '?', ':', ',', '&', '^', '~', '@', ';'], true);
+        }
+        return in_array($id, [
+            T_IS_EQUAL, T_IS_NOT_EQUAL, T_IS_IDENTICAL, T_IS_NOT_IDENTICAL, T_IS_SMALLER_OR_EQUAL,
+            T_IS_GREATER_OR_EQUAL, T_SPACESHIP, T_BOOLEAN_AND, T_BOOLEAN_OR, T_LOGICAL_AND, T_LOGICAL_OR,
+            T_LOGICAL_XOR, T_COALESCE, T_COALESCE_EQUAL, T_PLUS_EQUAL, T_MINUS_EQUAL, T_MUL_EQUAL, T_DIV_EQUAL,
+            T_CONCAT_EQUAL, T_MOD_EQUAL, T_POW, T_POW_EQUAL, T_SL, T_SR, T_DOUBLE_ARROW, T_AS, T_INSTANCEOF,
+            T_ECHO, T_PRINT, T_RETURN,
+        ], true);
+    }
 
-        if ($e instanceof \ErrorException) {
-            throw new \ErrorException(
-                $e->getMessage() . " -> " . $currentFile . ":" . $currentLine,
-                $e->getCode(),
-                $e->getSeverity(),
-                $e->getFile(),
-                $e->getLine(),
-                $e->getPrevious()
-            );
-
+    /**
+     * Points the error at the template line that caused it, instead of the cache file.
+     * Only runs when something already went wrong: rendering pays nothing for it.
+     */
+    private function mapToTemplate(Throwable $e): Throwable
+    {
+        // Already mapped by a nested render (include, layout).
+        if (in_array($e->getFile(), $this->sources, true)) {
+            return $e;
         }
 
-        throw new \ErrorException(
-            "PurePlate Error: " . $e->getMessage() . " [At: " . $currentFile . ":" . $currentLine . "]",
-            $e->getCode(),
+        // The first cache file met, from the error up the call stack, is the culprit.
+        $frames = array_merge([['file' => $e->getFile(), 'line' => $e->getLine()]], $e->getTrace());
+        foreach ($frames as $frame) {
+            $template = $this->sources[basename($frame['file'] ?? '')] ?? null;
+            if ($template !== null) {
+                return $this->templateError($e, $template, $frame['line']);
+            }
+        }
+
+        return $e;
+    }
+
+    private function templateError(Throwable $e, string $template, int $line): ErrorException
+    {
+        return new ErrorException(
+            "PurePlate Error: {$e->getMessage()} [At: {$template}:{$line}]",
+            0,
             E_USER_ERROR,
-            $e->getFile(),
-            $e->getLine(),
+            $template,
+            $line,
             $e
         );
     }
 
-    private function isCacheValid(string $templateFile, string $cacheFile): bool
+    private function syntaxError(string $message, int $line): ErrorException
     {
-        if (!file_exists($cacheFile)) {
-            return false;
-        }
-
-        return filemtime($cacheFile) >= filemtime($templateFile);
+        return new ErrorException($message, 0, E_USER_ERROR, '', $line);
     }
 
-    private function getCacheFilename(string $templateFile): string
+    private function getCacheFilename(string $templatePath): string
     {
-        $hash = md5(realpath($templateFile));
-        $basename = pathinfo($templateFile, PATHINFO_FILENAME);
-        return $this->cacheDir . DIRECTORY_SEPARATOR . $basename . '_' . $hash . '.cache.php';
+        $basename = pathinfo($templatePath, PATHINFO_FILENAME);
+        return $this->cacheDir . DIRECTORY_SEPARATOR . $basename . '_' . md5($templatePath) . '.cache.php';
     }
 
     private function saveToCache(string $cacheFile, string $compiledCode): void
